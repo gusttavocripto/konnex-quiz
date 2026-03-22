@@ -71,6 +71,24 @@ export default function App() {
   const scoreRef    = useRef(0);
   const answeredRef = useRef(false);
 
+  const [flashType, setFlashType]     = useState("");
+  const [confetti, setConfetti]       = useState([]);
+  const [scoreAnim, setScoreAnim]     = useState(false);
+
+  const triggerConfetti = () => {
+    const pieces = Array.from({ length: 28 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: ["#00e5ff","#0066ff","#a78bfa","#34d399","#fbbf24","#f472b6"][Math.floor(Math.random()*6)],
+      size: Math.random() * 8 + 6,
+      dur: Math.random() * 1.5 + 1,
+      del: Math.random() * 0.4,
+      rot: Math.random() * 360,
+    }));
+    setConfetti(pieces);
+    setTimeout(() => setConfetti([]), 2500);
+  };
+
   const [particles] = useState(() =>
     Array.from({ length: 30 }, (_, i) => ({
       id: i, x: Math.random()*100, y: Math.random()*100,
@@ -184,6 +202,8 @@ export default function App() {
   const handleTimeout = () => {
     if (answeredRef.current) return;
     answeredRef.current = true; setAnswered(true); setSelected(-1);
+    setFlashType("timeout");
+    setTimeout(() => setFlashType(""), 900);
     setResults(r => [...r, { q:qIdx, picked:-1, correct:false, pts:0 }]);
     setTimeout(() => advance(), 2000);
   };
@@ -194,7 +214,16 @@ export default function App() {
     answeredRef.current = true; setAnswered(true); setSelected(idx);
     const correct = idx === questions[qIdx].a;
     const pts = correct ? Math.max(20, 100 - (20 - timeLeft) * 4) : 0;
-    if (correct) { const ns = scoreRef.current + pts; scoreRef.current = ns; setScore(ns); }
+    if (correct) {
+      const ns = scoreRef.current + pts; scoreRef.current = ns; setScore(ns);
+      setFlashType("correct");
+      triggerConfetti();
+      setScoreAnim(true);
+      setTimeout(() => setScoreAnim(false), 400);
+    } else {
+      setFlashType("wrong");
+    }
+    setTimeout(() => setFlashType(""), 700);
     setResults(r => [...r, { q:qIdx, picked:idx, correct, pts }]);
     setTimeout(() => advance(), 2200);
   };
@@ -246,6 +275,17 @@ export default function App() {
         @keyframes spin-slow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
         @keyframes pulse-btn{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{box-shadow:0 0 0 20px rgba(0,229,255,0)}}
         @keyframes fade-up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes correct-flash{0%{background:rgba(52,211,153,0)}20%{background:rgba(52,211,153,0.15)}100%{background:rgba(52,211,153,0)}}
+        @keyframes wrong-flash{0%{background:rgba(239,68,68,0)}20%{background:rgba(239,68,68,0.15)}100%{background:rgba(239,68,68,0)}}
+        @keyframes shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-8px)}30%{transform:translateX(8px)}45%{transform:translateX(-6px)}60%{transform:translateX(6px)}75%{transform:translateX(-3px)}90%{transform:translateX(3px)}}
+        @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.04)}100%{transform:scale(1)}}
+        @keyframes confetti-fall{0%{transform:translateY(-20px) rotate(0deg);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
+        @keyframes score-pop{0%{transform:scale(1)}50%{transform:scale(1.4)}100%{transform:scale(1)}}
+        @keyframes timeout-flash{0%,100%{background:rgba(251,146,60,0)}30%{background:rgba(251,146,60,0.12)}70%{background:rgba(251,146,60,0.12)}}
+        .flash-correct{animation:correct-flash 0.7s ease forwards,pop 0.3s ease forwards}
+        .flash-wrong{animation:wrong-flash 0.7s ease forwards,shake 0.5s ease forwards}
+        .flash-timeout{animation:timeout-flash 0.8s ease forwards}
+        .score-bounce{animation:score-pop 0.3s ease forwards}
         input,textarea{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#e2e8f0;padding:14px 18px;font-size:16px;font-family:'Inter',sans-serif;width:100%;outline:none;transition:border 0.2s}
         input:focus,textarea:focus{border-color:rgba(0,229,255,0.5);box-shadow:0 0 0 3px rgba(0,229,255,0.1)}
         input::placeholder,textarea::placeholder{color:#4a5568}
@@ -253,6 +293,17 @@ export default function App() {
       `}</style>
 
       <audio ref={audioRef} src={AUDIO_URL} preload="auto" />
+
+      {/* FLASH OVERLAY */}
+      {flashType && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, pointerEvents:"none" }}
+          className={flashType==="correct"?"flash-correct":flashType==="wrong"?"flash-wrong":"flash-timeout"} />
+      )}
+
+      {/* CONFETTI */}
+      {confetti.map(c => (
+        <div key={c.id} style={{ position:"fixed", left:`${c.x}%`, top:0, width:c.size, height:c.size, background:c.color, borderRadius: c.id%3===0?"50%":c.id%3===1?"2px":"0", zIndex:300, pointerEvents:"none", animation:`confetti-fall ${c.dur}s ease-in ${c.del}s forwards`, transform:`rotate(${c.rot}deg)` }} />
+      ))}
 
       {particles.map(p => (
         <div key={p.id} className="particle" style={{ left:`${p.x}%`, top:`${p.y}%`, width:p.size, height:p.size, animationDuration:`${p.dur}s`, animationDelay:`${p.del}s` }} />
@@ -279,22 +330,32 @@ export default function App() {
             ▶ &nbsp; ENTER
           </button>
           <div style={{ marginTop:24, fontSize:11, color:"#334155", letterSpacing:1 }}>🎵 Sound on for best experience</div>
-          <div style={{ position:"absolute", bottom:24 }}>
+          <div style={{ position:"absolute", bottom:24, display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
             <a href="https://x.com/gusttavocripto" target="_blank" rel="noopener noreferrer" className="badge-creator">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               <span>Created by <strong style={{ color:"#00e5ff" }}>@gusttavocripto</strong></span>
               <span style={{ background:"rgba(0,229,255,0.15)", color:"#00e5ff", fontSize:10, padding:"2px 6px", borderRadius:20, fontWeight:700 }}>CRYPTO RESEARCHER</span>
+            </a>
+            <a href="https://x.com/konnex_world" target="_blank" rel="noopener noreferrer" className="badge-creator">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              <span>Official Project <strong style={{ color:"#00e5ff" }}>@konnex_world</strong></span>
+              <span style={{ background:"rgba(0,229,255,0.15)", color:"#00e5ff", fontSize:10, padding:"2px 6px", borderRadius:20, fontWeight:700 }}>OFFICIAL</span>
             </a>
           </div>
         </div>
       )}
 
       {/* CREATOR BADGE */}
-      <div style={{ position:"fixed", top:16, right:16, zIndex:100 }}>
+      <div style={{ position:"fixed", top:16, right:16, zIndex:100, display:"flex", flexDirection:"column", gap:8, alignItems:"flex-end" }}>
         <a href="https://x.com/gusttavocripto" target="_blank" rel="noopener noreferrer" className="badge-creator">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
           <span>Created by <strong style={{ color:"#00e5ff" }}>@gusttavocripto</strong></span>
           <span style={{ background:"rgba(0,229,255,0.15)", color:"#00e5ff", fontSize:10, padding:"2px 6px", borderRadius:20, fontWeight:700 }}>CRYPTO RESEARCHER</span>
+        </a>
+        <a href="https://x.com/konnex_world" target="_blank" rel="noopener noreferrer" className="badge-creator">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          <span>Official <strong style={{ color:"#00e5ff" }}>@konnex_world</strong></span>
+          <span style={{ background:"rgba(0,229,255,0.15)", color:"#00e5ff", fontSize:10, padding:"2px 6px", borderRadius:20, fontWeight:700 }}>OFFICIAL</span>
         </a>
       </div>
 
@@ -413,7 +474,7 @@ export default function App() {
             )}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:20 }}>
               <div style={{ fontSize:13, color:"#64748b" }}>Player: <strong style={{ color:"#e2e8f0" }}>{name}</strong></div>
-              <div style={{ fontSize:13 }}>Score: <strong style={{ color:"#00e5ff" }}>{score}</strong></div>
+              <div style={{ fontSize:13 }}>Score: <strong className={scoreAnim?"score-bounce":""} style={{ color:"#00e5ff", display:"inline-block" }}>{score}</strong></div>
             </div>
           </div>
         )}
