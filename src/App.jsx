@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 const AUDIO_URL = "https://files.catbox.moe/t0wkb1.mp3";
+
+const supabase = createClient(
+  "https://vpxucajnzrwpskrluewi.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZweHVjYWpuenJ3cHNrcmx1ZXdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNDY2MDIsImV4cCI6MjA4OTcyMjYwMn0.vgRNP_ROlVy1M0uPpHCd0gmt6oc-Acup7IaFiMN0TK4"
+);
 
 const QUESTIONS = [
   {
@@ -77,7 +83,15 @@ const fmtDate   = ts => new Date(ts).toLocaleDateString("en-US", { month:"short"
 const STORE_KEY = "knx_leaderboard_v1";
 
 export default function App() {
-  const [screen, setScreen]         = useState("home");
+  const [splashOut, setSplashOut] = useState(false);
+
+  const enterSite = () => {
+    playAudio();
+    setSplashOut(true);
+    setTimeout(() => setScreen("home"), 800);
+  };
+
+  const [screen, setScreen]         = useState("splash");
   const [nameInput, setNameInput]   = useState("");
   const [name, setName]             = useState("");
   const [qIdx, setQIdx]             = useState(0);
@@ -89,6 +103,7 @@ export default function App() {
   const [board, setBoard]           = useState([]);
   const [myRank, setMyRank]         = useState(null);
   const [playing, setPlaying]       = useState(false);
+  const [boardLoading, setBoardLoading] = useState(false);
 
   const audioRef    = useRef(null);
   const timerRef    = useRef(null);
@@ -106,13 +121,21 @@ export default function App() {
     }))
   );
 
-  /* ── load board from localStorage ── */
-  useEffect(() => {
+  /* ── load board from Supabase ── */
+  const loadBoard = async () => {
+    setBoardLoading(true);
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) setBoard(JSON.parse(raw));
+      const { data } = await supabase
+        .from("leaderboard")
+        .select("*")
+        .order("score", { ascending: false })
+        .limit(50);
+      if (data) setBoard(data);
     } catch (_) {}
-  }, []);
+    setBoardLoading(false);
+  };
+
+  useEffect(() => { loadBoard(); }, []);
 
   /* ── audio helpers ── */
   const playAudio = () => {
@@ -130,19 +153,44 @@ export default function App() {
     else         { a.play().then(() => setPlaying(true)); }
   };
 
-  /* ── save score ── */
-  const saveScore = (playerName, finalScore) => {
+  /* ── save score to Supabase ── */
+  const saveScore = async (playerName, finalScore) => {
     try {
-      let b = [...board];
-      const entry = { name: playerName, score: finalScore, tier: getTier(finalScore).label, ts: Date.now() };
-      const idx = b.findIndex(e => e.name.toLowerCase() === playerName.toLowerCase());
-      if (idx >= 0) { if (finalScore > b[idx].score) b[idx] = entry; }
-      else b.push(entry);
-      b.sort((a, z) => z.score - a.score);
-      localStorage.setItem(STORE_KEY, JSON.stringify(b));
-      setBoard(b);
-      setMyRank(b.findIndex(e => e.name.toLowerCase() === playerName.toLowerCase()) + 1);
-    } catch (_) {}
+      // check if player already has a better score
+      const { data: existing } = await supabase
+        .from("leaderboard")
+        .select("id, score")
+        .ilike("name", playerName)
+        .single();
+
+      const tier = getTier(finalScore).label;
+
+      if (existing) {
+        if (finalScore > existing.score) {
+          await supabase
+            .from("leaderboard")
+            .update({ score: finalScore, tier, created_at: new Date().toISOString() })
+            .eq("id", existing.id);
+        }
+      } else {
+        await supabase
+          .from("leaderboard")
+          .insert({ name: playerName, score: finalScore, tier });
+      }
+
+      // reload board and find rank
+      const { data } = await supabase
+        .from("leaderboard")
+        .select("*")
+        .order("score", { ascending: false })
+        .limit(50);
+
+      if (data) {
+        setBoard(data);
+        const rank = data.findIndex(e => e.name.toLowerCase() === playerName.toLowerCase()) + 1;
+        setMyRank(rank);
+      }
+    } catch (e) { console.error(e); }
   };
 
   /* ── start quiz ── */
@@ -305,7 +353,7 @@ export default function App() {
               <p style={{ fontSize:11, color:"#334155", marginTop:12, textAlign:"center" }}>🎵 Music starts when you launch</p>
             </div>
 
-            <button className="btn btn-secondary" onClick={()=>setScreen("board")}>🏆 View Global Leaderboard</button>
+            <button className="btn btn-secondary" onClick={()=>{ loadBoard(); setScreen("board"); }}>🏆 View Global Leaderboard</button>
           </div>
         )}
 
@@ -405,10 +453,14 @@ export default function App() {
                 🏆 GLOBAL RANKINGS
               </div>
               <h2 style={{ fontSize:32, fontWeight:900, background:"linear-gradient(135deg,#fff,#00e5ff)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>Leaderboard</h2>
-              <p style={{ color:"#64748b", fontSize:14, marginTop:8 }}>{board.length} total competitors</p>
+              <p style={{ color:"#64748b", fontSize:14, marginTop:8 }}>{board.length} total competitors worldwide</p>
             </div>
 
-            {board.length === 0 ? (
+            {boardLoading ? (
+              <div className="card" style={{ padding:40, textAlign:"center" }}>
+                <div style={{ color:"#00e5ff", fontSize:14, letterSpacing:2 }}>⏳ LOADING RANKINGS...</div>
+              </div>
+            ) : board.length === 0 ? (
               <div className="card" style={{ padding:40, textAlign:"center", color:"#4a5568" }}>No entries yet. Be the first to conquer the challenge!</div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:28 }}>
@@ -422,7 +474,7 @@ export default function App() {
                       <div style={{ fontWeight:700, fontSize:15, color: e.name.toLowerCase()===name.toLowerCase()?"#00e5ff":"#e2e8f0" }}>
                         {e.name} {e.name.toLowerCase()===name.toLowerCase() && <span style={{ fontSize:11, color:"#00e5ff", background:"rgba(0,229,255,0.1)", borderRadius:20, padding:"2px 8px" }}>YOU</span>}
                       </div>
-                      <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{e.tier} · {fmtDate(e.ts)}</div>
+                      <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{e.tier} · {fmtDate(e.created_at)}</div>
                     </div>
                     <div style={{ fontSize:22, fontWeight:900, color: i===0?"#ffd700":i===1?"#c0c0c0":i===2?"#cd7f32":"#00e5ff" }}>{e.score}</div>
                   </div>
@@ -432,6 +484,7 @@ export default function App() {
 
             <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
               <button className="btn btn-primary"   onClick={startQuiz}>⚡ Play Now</button>
+              <button className="btn btn-secondary" onClick={()=>{ loadBoard(); setScreen("board"); }}>↺ Refresh</button>
               <button className="btn btn-secondary" onClick={()=>setScreen("home")}>⌂ Home</button>
             </div>
           </div>
