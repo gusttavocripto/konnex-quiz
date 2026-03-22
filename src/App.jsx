@@ -107,8 +107,29 @@ export default function App() {
     } catch(e) { console.error(e); }
   };
 
-  const startQuiz = () => {
+  const [nameError, setNameError] = useState("");
+  const [checkingName, setCheckingName] = useState(false);
+
+  const startQuiz = async () => {
     if (!nameInput.trim()) return;
+    setNameError("");
+    setCheckingName(true);
+
+    try {
+      const { data } = await supabase
+        .from("leaderboard")
+        .select("id")
+        .ilike("name", nameInput.trim())
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setNameError(`❌ "${nameInput.trim()}" is already taken. Please choose a different name.`);
+        setCheckingName(false);
+        return;
+      }
+    } catch(e) { console.error(e); }
+
+    setCheckingName(false);
     setName(nameInput.trim());
     setQIdx(0); setScore(0); scoreRef.current = 0;
     setResults([]); setSelected(null);
@@ -296,9 +317,24 @@ export default function App() {
             </div>
             <div className="card" style={{ padding:28, maxWidth:420, margin:"0 auto 24px" }}>
               <label style={{ display:"block", fontSize:12, color:"#64748b", letterSpacing:2, fontWeight:700, marginBottom:10 }}>YOUR HANDLE / NAME</label>
-              <input placeholder="e.g. CryptoNinja, 0xRobo..." value={nameInput} onChange={e=>setNameInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&startQuiz()} maxLength={24} />
-              <button className="btn btn-primary" onClick={startQuiz} style={{ width:"100%", marginTop:16, fontSize:15, letterSpacing:2 }}>
-                🚀 LAUNCH CHALLENGE
+              <input
+                placeholder="e.g. CryptoNinja, 0xRobo..."
+                value={nameInput}
+                onChange={e=>{ setNameInput(e.target.value); setNameError(""); }}
+                onKeyDown={e=>e.key==="Enter"&&startQuiz()}
+                maxLength={24}
+                style={{ borderColor: nameError ? "rgba(239,68,68,0.6)" : undefined }}
+              />
+              {nameError && (
+                <div style={{ fontSize:12, color:"#ef4444", marginTop:8, lineHeight:1.5 }}>{nameError}</div>
+              )}
+              <button
+                className="btn btn-primary"
+                onClick={startQuiz}
+                disabled={checkingName}
+                style={{ width:"100%", marginTop:16, fontSize:15, letterSpacing:2, opacity: checkingName ? 0.7 : 1 }}
+              >
+                {checkingName ? "⏳ CHECKING..." : "🚀 LAUNCH CHALLENGE"}
               </button>
             </div>
             <button className="btn btn-secondary" onClick={()=>{ loadBoard(); setScreen("board"); }}>🏆 View Global Leaderboard</button>
